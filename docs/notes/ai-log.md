@@ -12,7 +12,7 @@
 | Phase | Công việc chính | Số lượt Prompt chính | Ước tính Input Tokens | Ước tính Output Tokens | Chi phí quy đổi ước tính (USD) | Cách tiết kiệm đã áp dụng |
 |---|---|---:|---:|---:|---:|---|
 | **Phase 1 (PRD-0)** | Đọc repo & Lab Board, thiết kế Harness, xây dựng Core Sim + Headless CLI + 3D Client, chạy Verify & Independent Review | 3 | ~32,000 | ~8,500 | ~$0.18 | Đọc 6 file tài liệu trong 1 turn song song; dùng `flash` cho browser subagent; viết core zero-dependency chạy đúng ngay lần đầu. |
-| **Phase 2 (Ticket-02)** | *(Cập nhật khi Phase 2 mở)* | - | - | - | - | - |
+| **Phase 2 (Ticket-02)** | Mở rộng 3 Đêm (Đảo Cau, Đảo Chuông), Test Contract v1.1, Jump pads, Gió Lạc, Bùa Gió, Benchmark 21k ticks <= 30s | 4 | ~45,000 | ~14,000 | ~$0.26 | Tận dụng Core pure JS, viết test suite tự động kiểm tra hồi quy kết hợp tính năng mới trong 1 lượt chạy. |
 | **Phase 3 (Ticket-03)** | *(Cập nhật khi Phase 3 mở)* | - | - | - | - | - |
 | **Phase 4 (Ticket-04)** | *(Cập nhật khi Phase 4 mở)* | - | - | - | - | - |
 
@@ -26,6 +26,7 @@
 | **Phase 1 (Input Edge)** | Nguy cơ nút `interact` hoặc `pulse` kích hoạt liên tục mỗi tick nếu người chơi giữ phím, trái với quy định *"chuyển từ `false` sang `true`"* của Test Contract. | Đối chiếu mục C của Test Contract v1.0. | Lưu trạng thái `this.inputState.interact` và chỉ bật cờ `interactTriggered` ở sườn lên (`!prev && next`), đồng thời ghi rõ vào `AGENTS.md` mục 3. |
 | **Phase 1 (3D Client W/S Mapping)** | Trong `src/client/main.mjs`, phím `W`/`S` bị gán ngược dấu (`mz -= 1` khi `camYawDeg = 180`), làm bấm `W` đi lùi về phía camera. | Phát hiện bởi **Independent QA Reviewer Subagent** trong bước kiểm tra chéo độc lập. | Đổi `camYawDeg = 0` và chuẩn hóa `W -> mz += 1`, `S -> mz -= 1`, `A -> mx -= 1`, `D -> mx += 1`, đồng thời thêm `AC-1.8` vào `tests/verify.mjs`. |
 | **Phase 1 (Camera Right-Vector vs A/D)** | Trong `project3D()` của `src/client/main.mjs`, vector `right` của camera ban đầu tính theo `(-fz, 0, fx)` khiến trục `+X` chiếu sang bên trái màn hình, làm bấm `D` (`+X`) đi sang trái và `A` (`-X`) đi sang phải. | Người chơi (User) phát hiện khi test trực tiếp trên trình duyệt. | Đổi vector `right` của camera thành `(fz, 0, -fx)` và `up = cross(forward, right)` để trục `+X` chiếu đúng sang bên phải màn hình ở mọi góc xoay camera, bổ sung kiểm tra vào `AC-1.8`. |
+| **Phase 2 (Drifter Chase vs Steal Sequence)** | Ban đầu trong `sim.mjs`, bước di chuyển thực thể và bước chạm được gom chung, khiến Gió Lạc cướp đom đóm trước khi người chơi kịp kích hoạt Pulse nếu cùng tick. | Kiểm tra đối chiếu với thứ tự 12 bước bắt buộc của Ticket-02 (Tỏa sáng ở bước 7, di chuyển bóng/Gió Lạc ở bước 8, chạm ở bước 9). | Tách rời 12 bước theo đúng thứ tự Contract v1.1: Pulse giải quyết ở bước 7 trước, di chuyển ở bước 8, rồi mới chạm cướp ở bước 9. |
 
 ---
 
