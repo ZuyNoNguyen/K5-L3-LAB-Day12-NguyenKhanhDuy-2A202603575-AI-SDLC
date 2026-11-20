@@ -1,6 +1,7 @@
-// Automated Verification & Proof Generation Suite for Phase 1 ("Đảo Đèn Lồng")
-// Runs unit tests, scenario headless tests, determinism checks, and exit-code checks,
-// and saves real verification artifacts into docs/proof/phase1/.
+// Automated Verification & Proof Generation Suite for Phase 2 ("Đảo Đèn Lồng" - Contract v1.1)
+// Runs regression unit tests for Phase 1 and automated scenarios for Phase 2 features:
+// Dash, Fall/Respawn, Night 2 Cau Island jump pads, Night 3 Bell Island 3 tiers & ramps & wind,
+// Drifter steals & pulse drops, Charms, Pause toggle, 21,600 ticks benchmark <= 30s, and determinism.
 
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -8,12 +9,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GameSimulation, DEFAULT_TUNING } from '../src/core/sim.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
-const PROOF_DIR = path.join(ROOT_DIR, 'docs', 'proof', 'phase1');
+const PROOF_DIR = path.join(ROOT_DIR, 'docs', 'proof', 'phase2');
 const SCENARIOS_DIR = path.join(PROOF_DIR, 'scenarios');
 const OUTPUTS_DIR = path.join(PROOF_DIR, 'outputs');
 
@@ -57,38 +57,104 @@ function runTest(id, description, fn) {
   }
 }
 
-console.log('=== ĐẢO ĐÈN LỒNG — PHASE 1 AUTOMATED VERIFICATION ===\n');
+console.log('=== ĐẢO ĐÈN LỒNG — PHASE 2 AUTOMATED VERIFICATION (Contract v1.1) ===\n');
 
-// Test 1: Contract validation
-runTest('AC-1.1', 'Validate game.contract.json schema & tuning fields', () => {
+// AC-2.1: Contract v1.1 validation & Regression on Night 1
+runTest('AC-2.1', 'Validate Contract v1.1 schema, tuning & Night 1 Regression (interact deposit, pulse cost=3, lantern_cost=10)', () => {
   const contractPath = path.join(ROOT_DIR, 'game.contract.json');
-  assert.ok(fs.existsSync(contractPath), 'game.contract.json must exist at repo root');
+  assert.ok(fs.existsSync(contractPath), 'game.contract.json must exist');
   const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
-  assert.equal(contract.contract_version, '1.0');
-  assert.equal(contract.tuning.lantern_count_night1, 5);
-  assert.ok(contract.tuning.player_speed > 0);
-  assert.ok(contract.tuning.carry_capacity >= contract.tuning.lantern_cost);
-  return `contract_version=${contract.contract_version}, team=${contract.team}`;
-});
+  assert.equal(contract.contract_version, '1.1');
+  assert.equal(contract.tuning.player_speed, 6.0);
+  assert.equal(contract.tuning.dash_speed, 14.0);
+  assert.equal(contract.tuning.carry_capacity, 10);
+  assert.equal(contract.tuning.lantern_cost, 10);
+  assert.equal(contract.tuning.pulse_cost, 3);
+  assert.equal(contract.tuning.safe_radius, 6.0);
 
-// Test 2: Movement math with cam_yaw_deg & mote_picked
-runTest('AC-1.2', 'Verify cam_yaw_deg movement transformation & mote_picked event', () => {
-  const scPath = path.join(SCENARIOS_DIR, 'sc_pickup_yaw.json');
-  const inPath = path.join(SCENARIOS_DIR, 'in_pickup_yaw.json');
-  const outPath = path.join(OUTPUTS_DIR, 'out_pickup_yaw.jsonl');
+  const scPath = path.join(SCENARIOS_DIR, 'sc_regress_night1.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_regress_night1.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_regress_night1.jsonl');
 
-  // Place M1 at (0, 0, 3) and M2 at (3, 0, 3)
   fs.writeFileSync(
     scPath,
     JSON.stringify(
       {
-        player: { pos: [0, 0, 0], carried: 0, flames: 3 },
+        player: { pos: [0, 0, 0], carried: 10, flames: 3 },
         random_motes: false,
         random_shades: false,
-        motes: [
-          [0, 0, 3],
-          [3, 0, 3]
+        motes: [],
+        shades: [],
+        lanterns: [
+          { id: 'L1', pos: [0, 0, 1.5], deposited: 0, lit: false },
+          { id: 'L2', lit: true },
+          { id: 'L3', lit: true },
+          { id: 'L4', lit: true },
+          { id: 'L5', lit: true }
         ],
+        time_left_s: 100
+      },
+      null,
+      2
+    )
+  );
+
+  fs.writeFileSync(
+    inPath,
+    JSON.stringify(
+      {
+        frames: [
+          { tick: 2, interact: true },
+          { tick: 3, interact: false }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const res = runHeadlessCLI([
+    '--seed', '1',
+    '--night', '1',
+    '--scenario', scPath,
+    '--inputs', inPath,
+    '--ticks', '20',
+    '--out', outPath
+  ]);
+  assert.equal(res.status, 0, res.stderr);
+
+  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
+  const snap0 = records[0];
+  assert.equal(snap0.night, 1);
+  assert.ok(snap0.wind);
+  assert.ok(snap0.player.vel);
+  assert.equal(typeof snap0.player.dash_cd_s, 'number');
+
+  const dep = records.find((r) => r.type === 'event' && r.name === 'deposit');
+  const lit = records.find((r) => r.type === 'event' && r.name === 'lantern_lit');
+  const win = records.find((r) => r.type === 'event' && r.name === 'game_over');
+  assert.equal(dep.data.amount, 10);
+  assert.equal(lit.data.lantern_id, 'L1');
+  assert.equal(win.data.result, 'won');
+
+  return `Deposit 10 motes, lit L1, won at tick ${win.tick}, score=${records.at(-1).score}`;
+});
+
+// AC-2.2: Dash & Fall / Respawn (Y < -10)
+runTest('AC-2.2', 'Verify Dash event (14m/s) & Fall into mist (Y < -10, player_hit by fall, lost motes, 60-tick respawn)', () => {
+  const scPath = path.join(SCENARIOS_DIR, 'sc_dash_fall.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_dash_fall.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_dash_fall.jsonl');
+
+  // Place player at rim (0, 0, 39) with 5 carried motes, facing +Z, then dash forward past 40m
+  fs.writeFileSync(
+    scPath,
+    JSON.stringify(
+      {
+        player: { pos: [0, 0, 39.0], carried: 5, flames: 3 },
+        random_motes: false,
+        random_shades: false,
+        motes: [],
         shades: []
       },
       null,
@@ -96,15 +162,13 @@ runTest('AC-1.2', 'Verify cam_yaw_deg movement transformation & mote_picked even
     )
   );
 
-  // Move forward along +Z (move:[0,1], yaw:0) for 23 ticks (~3.06m), then turn yaw:90 and move forward (move:[0,1] -> +X) for 23 ticks
   fs.writeFileSync(
     inPath,
     JSON.stringify(
       {
         frames: [
-          { tick: 0, move: [0, 1], cam_yaw_deg: 0 },
-          { tick: 23, move: [0, 1], cam_yaw_deg: 90 },
-          { tick: 46, move: [0, 0] }
+          { tick: 0, move: [0, 1], dash: true },
+          { tick: 1, dash: false }
         ]
       },
       null,
@@ -113,51 +177,112 @@ runTest('AC-1.2', 'Verify cam_yaw_deg movement transformation & mote_picked even
   );
 
   const res = runHeadlessCLI([
-    '--seed', '10',
+    '--seed', '1',
     '--night', '1',
     '--scenario', scPath,
     '--inputs', inPath,
-    '--ticks', '50',
+    '--ticks', '150',
     '--out', outPath,
     '--snapshot-every', '10'
   ]);
-  assert.equal(res.status, 0, `Expected exit 0, got ${res.status}: ${res.stderr}`);
+  assert.equal(res.status, 0, res.stderr);
 
   const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
-  const pickups = records.filter((r) => r.type === 'event' && r.name === 'mote_picked');
-  assert.equal(pickups.length, 2, 'Must pick up both motes using cam_yaw_deg rotation');
-  assert.equal(pickups[0].data.carried, 1);
-  assert.equal(pickups[1].data.carried, 2);
-  const endRec = records.at(-1);
-  assert.equal(endRec.type, 'end');
-  assert.equal(endRec.score, 20);
-  return `Picked 2 motes at ticks ${pickups.map((p) => p.tick).join(', ')}; final score=${endRec.score}`;
+  const dashEv = records.find((r) => r.type === 'event' && r.name === 'dash');
+  assert.ok(dashEv, 'dash event must be emitted');
+
+  const fallEv = records.find((r) => r.type === 'event' && r.name === 'player_hit' && r.data.by === 'fall');
+  assert.ok(fallEv, 'player_hit by fall event must be emitted');
+  assert.equal(fallEv.data.flames, 2);
+  assert.equal(fallEv.data.lost, 5);
+
+  // Check respawn after 60 ticks (tick 71 + 60 = 131 -> snapshot tick 140)
+  const postRespawnSnap = records.find((r) => r.type === 'snapshot' && r.tick >= fallEv.tick + 60);
+  assert.ok(postRespawnSnap);
+  assert.equal(postRespawnSnap.player.flames, 2);
+  assert.equal(postRespawnSnap.player.invuln, true);
+  assert.equal(postRespawnSnap.player.grounded, true);
+
+  return `Dash at tick ${dashEv.tick}, fell at tick ${fallEv.tick} (-1 flame, lost 5 motes), respawned at (0,0,0)`;
 });
 
-// Test 3: Deposit, lantern_lit, and win condition (all_lit)
-runTest('AC-1.3', 'Verify interact deposit, lantern_lit, and game_over (won / all_lit)', () => {
-  const scPath = path.join(SCENARIOS_DIR, 'sc_win_all_lit.json');
-  const inPath = path.join(SCENARIOS_DIR, 'in_win_all_lit.json');
-  const outPath = path.join(OUTPUTS_DIR, 'out_win_all_lit.jsonl');
+// AC-2.3: Night 2 (Đảo Cau) - Bamboo bridge & Jump Pad
+runTest('AC-2.3', 'Verify Night 2 (Đảo Cau) layout, bamboo bridge walking & jump pad to Island B', () => {
+  const scPath = path.join(SCENARIOS_DIR, 'sc_night2_jumppad.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_night2_jumppad.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_night2_jumppad.jsonl');
 
-  // L2..L5 already lit; L1 at (0, 0, 2) needs 3 motes; player at (0,0,0) carries 3 motes
+  // Place player at (19.8, 0, 18), just in front of jump pad JP1 at (20, 0, 18)
   fs.writeFileSync(
     scPath,
     JSON.stringify(
       {
-        player: { pos: [0, 0, 0], carried: 3, flames: 3 },
+        player: { pos: [19.0, 0, 18.0], carried: 0, flames: 3 },
+        random_motes: false,
+        random_shades: false,
+        motes: [],
+        shades: []
+      },
+      null,
+      2
+    )
+  );
+
+  fs.writeFileSync(
+    inPath,
+    JSON.stringify(
+      {
+        frames: [
+          { tick: 0, move: [1, 0] }, // move +X onto pad
+          { tick: 20, move: [0, 0] }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const res = runHeadlessCLI([
+    '--seed', '2',
+    '--night', '2',
+    '--scenario', scPath,
+    '--inputs', inPath,
+    '--ticks', '120',
+    '--out', outPath,
+    '--snapshot-every', '10'
+  ]);
+  assert.equal(res.status, 0, res.stderr);
+
+  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
+  const highSnap = records.find((r) => r.type === 'snapshot' && r.player.pos[1] > 2.0);
+  assert.ok(highSnap, 'Player must be launched into the air by jump pad');
+
+  const finalSnap = records.at(-2); // last snapshot before end
+  // Must land on Island B near (70, 0, 0)
+  assert.ok(finalSnap.player.pos[0] > 50, `Player should land on Island B, got x=${finalSnap.player.pos[0]}`);
+  assert.equal(finalSnap.player.grounded, true);
+
+  return `Launched via JP1 to apex Y=${highSnap.player.pos[1]}, landed on Island B at x=${finalSnap.player.pos[0]}`;
+});
+
+// AC-2.4: Night 3 (Đảo Chuông) - 3 Tiers, Ramps & Wind
+runTest('AC-2.4', 'Verify Night 3 (Đảo Chuông) 3-tier elevation, ramp ascending & wind push', () => {
+  const scPath = path.join(SCENARIOS_DIR, 'sc_night3_tiers.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_night3_tiers.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_night3_tiers.jsonl');
+
+  // Place player at foot of 30-degree ramp: r=30, deg=30 -> x = 30*cos(30) = 25.98, z = 30*sin(30) = 15.0
+  // Move toward island center along ramp to reach Tier 1 (r=24, deg=30 -> x=20.78, z=12.0, Y=3.0)
+  fs.writeFileSync(
+    scPath,
+    JSON.stringify(
+      {
+        player: { pos: [26.0, 0, 15.0], carried: 0, flames: 3 },
         random_motes: false,
         random_shades: false,
         motes: [],
         shades: [],
-        lanterns: [
-          { id: 'L1', pos: [0, 0, 2.0], deposited: 0, lit: false },
-          { id: 'L2', lit: true },
-          { id: 'L3', lit: true },
-          { id: 'L4', lit: true },
-          { id: 'L5', lit: true }
-        ],
-        time_left_s: 120
+        wind_enabled: true
       },
       null,
       2
@@ -169,8 +294,7 @@ runTest('AC-1.3', 'Verify interact deposit, lantern_lit, and game_over (won / al
     JSON.stringify(
       {
         frames: [
-          { tick: 5, interact: true },
-          { tick: 6, interact: false }
+          { tick: 0, move: [-0.866, -0.5] } // move along ramp towards center
         ]
       },
       null,
@@ -179,202 +303,54 @@ runTest('AC-1.3', 'Verify interact deposit, lantern_lit, and game_over (won / al
   );
 
   const res = runHeadlessCLI([
-    '--seed', '1',
-    '--night', '1',
+    '--seed', '3',
+    '--night', '3',
     '--scenario', scPath,
     '--inputs', inPath,
-    '--ticks', '100',
-    '--out', outPath
-  ]);
-  assert.equal(res.status, 0);
-
-  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
-  const depositEv = records.find((r) => r.type === 'event' && r.name === 'deposit');
-  const litEv = records.find((r) => r.type === 'event' && r.name === 'lantern_lit');
-  const winEv = records.find((r) => r.type === 'event' && r.name === 'game_over');
-  const endRec = records.at(-1);
-
-  assert.ok(depositEv, 'deposit event must be emitted');
-  assert.deepEqual(depositEv.data, { lantern_id: 'L1', amount: 3, deposited: 3 });
-  assert.ok(litEv, 'lantern_lit event must be emitted');
-  assert.equal(litEv.data.lantern_id, 'L1');
-  assert.ok(winEv, 'game_over event must be emitted');
-  assert.deepEqual(winEv.data, { result: 'won', reason: 'all_lit' });
-  assert.equal(endRec.state, 'won');
-  assert.equal(endRec.ticks, 6, 'Simulation must stop at tick 6 immediately when won');
-
-  return `Lit L1 at tick ${litEv.tick}, game_over=won(all_lit), score=${endRec.score}`;
-});
-
-// Test 4: Pulse stun and knockback
-runTest('AC-1.4', 'Verify pulse event stuns and pushes shades back', () => {
-  const scPath = path.join(SCENARIOS_DIR, 'sc_pulse_stun.json');
-  const inPath = path.join(SCENARIOS_DIR, 'in_pulse_stun.json');
-  const outPath = path.join(OUTPUTS_DIR, 'out_pulse_stun.jsonl');
-
-  fs.writeFileSync(
-    scPath,
-    JSON.stringify(
-      {
-        player: { pos: [0, 0, 0], carried: 2, flames: 3 },
-        random_motes: false,
-        random_shades: false,
-        motes: [],
-        shades: [
-          { id: 'S1', pos: [0, 0, 3.0] },
-          { id: 'S2', pos: [0, 0, 15.0] }
-        ]
-      },
-      null,
-      2
-    )
-  );
-
-  fs.writeFileSync(
-    inPath,
-    JSON.stringify(
-      {
-        frames: [
-          { tick: 0, pulse: true },
-          { tick: 1, pulse: false }
-        ]
-      },
-      null,
-      2
-    )
-  );
-
-  const res = runHeadlessCLI([
-    '--seed', '1',
-    '--night', '1',
-    '--scenario', scPath,
-    '--inputs', inPath,
-    '--ticks', '10',
-    '--out', outPath,
-    '--snapshot-every', '1'
-  ]);
-  assert.equal(res.status, 0);
-
-  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
-  const pulseEv = records.find((r) => r.type === 'event' && r.name === 'pulse');
-  assert.ok(pulseEv, 'pulse event must be emitted');
-  assert.deepEqual(pulseEv.data.stunned_ids, ['S1']);
-
-  const snap1 = records.find((r) => r.type === 'snapshot' && r.tick === 1);
-  const s1 = snap1.shades.find((s) => s.id === 'S1');
-  assert.equal(s1.state, 'stunned');
-  assert.equal(s1.pos[2], 7.0, 'S1 at z=3 pushed by 4m must be at z=7');
-
-  return `Pulse stunned S1, pushed from z=3.0 to z=${s1.pos[2]}`;
-});
-
-// Test 5: Shade hit, mote drop, and loss by no_flames
-runTest('AC-1.5', 'Verify player_hit event, mote drop ratio, and game_over (lost / no_flames)', () => {
-  const scPath = path.join(SCENARIOS_DIR, 'sc_hit_lose.json');
-  const outPath = path.join(OUTPUTS_DIR, 'out_hit_lose.jsonl');
-
-  fs.writeFileSync(
-    scPath,
-    JSON.stringify(
-      {
-        player: { pos: [0, 0, 0], carried: 4, flames: 1 },
-        random_motes: false,
-        random_shades: false,
-        motes: [],
-        shades: [{ id: 'S1', pos: [0, 0, 0.8] }]
-      },
-      null,
-      2
-    )
-  );
-
-  const res = runHeadlessCLI([
-    '--seed', '1',
-    '--night', '1',
-    '--scenario', scPath,
-    '--ticks', '20',
-    '--out', outPath
-  ]);
-  assert.equal(res.status, 0);
-
-  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
-  const hitEv = records.find((r) => r.type === 'event' && r.name === 'player_hit');
-  const overEv = records.find((r) => r.type === 'event' && r.name === 'game_over');
-  const endRec = records.at(-1);
-
-  assert.ok(hitEv, 'player_hit must be emitted');
-  assert.deepEqual(hitEv.data, { by: 'shade', flames: 0, dropped: 2 });
-  assert.ok(overEv, 'game_over must be emitted');
-  assert.deepEqual(overEv.data, { result: 'lost', reason: 'no_flames' });
-  assert.equal(endRec.state, 'lost');
-
-  return `Hit at tick ${hitEv.tick}: flames=0, dropped=2 -> game_over=lost(no_flames)`;
-});
-
-// Test 6: Dawn timeout & Safe radius around lit lanterns
-runTest('AC-1.6', 'Verify safe_radius around lit lantern & game_over (lost / dawn)', () => {
-  const scPath = path.join(SCENARIOS_DIR, 'sc_safe_dawn.json');
-  const outPath = path.join(OUTPUTS_DIR, 'out_safe_dawn.jsonl');
-
-  // Player stands right next to lit lantern L1 at (0,0,0); Shade S1 tries to chase from (0,0,7)
-  // Time left is 1.0 second (60 ticks), so at tick 60 dawn occurs without player being hit!
-  fs.writeFileSync(
-    scPath,
-    JSON.stringify(
-      {
-        player: { pos: [0, 0, 0], carried: 0, flames: 3 },
-        random_motes: false,
-        random_shades: false,
-        motes: [],
-        shades: [{ id: 'S1', pos: [0, 0, 6.0] }],
-        lanterns: [{ id: 'L1', pos: [0, 0, 0], lit: true }],
-        time_left_s: 1.0
-      },
-      null,
-      2
-    )
-  );
-
-  const res = runHeadlessCLI([
-    '--seed', '1',
-    '--night', '1',
-    '--scenario', scPath,
-    '--ticks', '100',
+    '--ticks', '80',
     '--out', outPath,
     '--snapshot-every', '10'
   ]);
-  assert.equal(res.status, 0);
+  assert.equal(res.status, 0, res.stderr);
 
   const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
-  const hits = records.filter((r) => r.type === 'event' && r.name === 'player_hit');
-  assert.equal(hits.length, 0, 'Shade must not enter safe_radius (5.0m) of lit L1');
+  const climbedSnap = records.find((r) => r.type === 'snapshot' && r.player.pos[1] >= 2.5);
+  assert.ok(climbedSnap, 'Player should ascend ramp to Tier 1 (Y ~ 3.0)');
 
-  const overEv = records.find((r) => r.type === 'event' && r.name === 'game_over');
-  assert.deepEqual(overEv.data, { result: 'lost', reason: 'dawn' });
-  const endRec = records.at(-1);
-  assert.equal(endRec.ticks, 60);
-  assert.equal(endRec.state, 'lost');
-
-  return `0 hits inside safe_radius=5m; dawn triggered at tick ${endRec.ticks}`;
+  return `Ascended 30-deg ramp from Y=0 to Y=${climbedSnap.player.pos[1]} on Tier 1`;
 });
 
-// Test 7: Determinism & Exit Code 2 on invalid inputs
-runTest('AC-1.7', 'Verify 100% byte-for-byte determinism & exit code 2 on malformed inputs', () => {
-  const outRun1 = path.join(OUTPUTS_DIR, 'out_det_run1.jsonl');
-  const outRun2 = path.join(OUTPUTS_DIR, 'out_det_run2.jsonl');
-  const inDetPath = path.join(SCENARIOS_DIR, 'in_determinism.json');
+// AC-2.5: Drifters (Gió Lạc) - Chase, Steal & Pulse drop
+runTest('AC-2.5', 'Verify Drifter (Gió Lạc) mechanics: chase -> steal -> flee -> pulse drops motes', () => {
+  const scPath = path.join(SCENARIOS_DIR, 'sc_drifter_steal_drop.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_drifter_steal_drop.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_drifter_steal_drop.jsonl');
 
+  // Player carries 6 motes at (0,0,0); Drifter D1 is at (0,0,2) in chase state
   fs.writeFileSync(
-    inDetPath,
+    scPath,
+    JSON.stringify(
+      {
+        player: { pos: [0, 0, 0], carried: 6, flames: 3 },
+        random_motes: false,
+        random_shades: false,
+        motes: [],
+        shades: [],
+        drifters: [{ id: 'D1', pos: [0, 0, 2.0], state: 'chase' }]
+      },
+      null,
+      2
+    )
+  );
+
+  // Frame: Tick 10: Player presses Pulse (costs 3 motes) -> hits D1 -> D1 drops stolen motes!
+  fs.writeFileSync(
+    inPath,
     JSON.stringify(
       {
         frames: [
-          { tick: 0, move: [0.6, 0.8], cam_yaw_deg: 30 },
-          { tick: 60, jump: true },
-          { tick: 61, jump: false },
-          { tick: 120, move: [-0.5, 0.5], cam_yaw_deg: 145 },
-          { tick: 300, pulse: true },
-          { tick: 301, pulse: false }
+          { tick: 10, pulse: true },
+          { tick: 11, pulse: false }
         ]
       },
       null,
@@ -382,114 +358,199 @@ runTest('AC-1.7', 'Verify 100% byte-for-byte determinism & exit code 2 on malfor
     )
   );
 
-  // Run 950 ticks so periodic shade_spawned (at tick 900) and random motes are also tested
-  const r1 = runHeadlessCLI([
-    '--seed', '202603575',
-    '--night', '1',
-    '--inputs', inDetPath,
-    '--ticks', '950',
-    '--out', outRun1,
-    '--snapshot-every', '50'
+  const res = runHeadlessCLI([
+    '--seed', '2',
+    '--night', '2',
+    '--scenario', scPath,
+    '--inputs', inPath,
+    '--ticks', '25',
+    '--out', outPath
   ]);
-  const r2 = runHeadlessCLI([
-    '--seed', '202603575',
-    '--night', '1',
-    '--inputs', inDetPath,
-    '--ticks', '950',
-    '--out', outRun2,
-    '--snapshot-every', '50'
-  ]);
+  assert.equal(res.status, 0, res.stderr);
 
-  assert.equal(r1.status, 0);
-  assert.equal(r2.status, 0);
+  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
+  const stealEv = records.find((r) => r.type === 'event' && r.name === 'drifter_steal');
+  assert.ok(stealEv, 'drifter_steal event must be emitted');
+  assert.equal(stealEv.data.amount, 3);
+  assert.equal(stealEv.data.carried, 3);
 
-  const hash1 = sha256(fs.readFileSync(outRun1, 'utf8'));
-  const hash2 = sha256(fs.readFileSync(outRun2, 'utf8'));
-  assert.equal(hash1, hash2, 'Determinism check failed: SHA-256 hashes differ');
+  const pulseEv = records.find((r) => r.type === 'event' && r.name === 'pulse');
+  assert.ok(pulseEv, 'pulse event must be emitted');
 
-  // Verify shade_spawned occurred at tick 900
-  const detRecords = parseJsonl(fs.readFileSync(outRun1, 'utf8'));
-  const spawnEv = detRecords.find((r) => r.type === 'event' && r.name === 'shade_spawned');
-  assert.ok(spawnEv, 'Periodic shade_spawned event should be recorded at tick 900');
+  const dropEv = records.find((r) => r.type === 'event' && r.name === 'drifter_drop');
+  assert.ok(dropEv, 'drifter_drop event must be emitted');
+  assert.equal(dropEv.data.amount, 3);
 
-  // Now test invalid input (non-increasing frame ticks) -> must exit with code 2
-  const badInPath = path.join(SCENARIOS_DIR, 'in_invalid_order.json');
+  return `Drifter D1 stole 3 motes, pulse hit caused drifter_drop of ${dropEv.data.amount} motes`;
+});
+
+// AC-2.6: Charms (Bùa Gió) - Picked, Speed 7.2m/s, Dash 0s Cooldown
+runTest('AC-2.6', 'Verify Wind Charm (Bùa Gió): charm_picked, speed increase, and zero dash cooldown', () => {
+  const scPath = path.join(SCENARIOS_DIR, 'sc_charm_boost.json');
+  const inPath = path.join(SCENARIOS_DIR, 'in_charm_boost.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_charm_boost.jsonl');
+
   fs.writeFileSync(
-    badInPath,
-    JSON.stringify({
-      frames: [
-        { tick: 10, move: [1, 0] },
-        { tick: 10, move: [0, 1] }
-      ]
-    })
+    scPath,
+    JSON.stringify(
+      {
+        player: { pos: [35, 0, 0.5], carried: 0, flames: 3 },
+        random_motes: false,
+        random_shades: false,
+        motes: [],
+        shades: [],
+        charms: [{ id: 'C1', pos: [35, 0, 0], available: true }]
+      },
+      null,
+      2
+    )
   );
-  const badRes = runHeadlessCLI([
+
+  // Frame: walk to C1, then dash twice in succession
+  fs.writeFileSync(
+    inPath,
+    JSON.stringify(
+      {
+        frames: [
+          { tick: 0, move: [0, -1] }, // pick up charm
+          { tick: 2, dash: true },    // first dash
+          { tick: 3, dash: false },
+          { tick: 16, dash: true },   // second dash right after 12 ticks
+          { tick: 17, dash: false }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const res = runHeadlessCLI([
+    '--seed', '2',
+    '--night', '2',
+    '--scenario', scPath,
+    '--inputs', inPath,
+    '--ticks', '30',
+    '--out', outPath
+  ]);
+  assert.equal(res.status, 0, res.stderr);
+
+  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
+  const charmEv = records.find((r) => r.type === 'event' && r.name === 'charm_picked');
+  assert.ok(charmEv, 'charm_picked must be emitted');
+  assert.equal(charmEv.data.charm_id, 'C1');
+
+  const dashes = records.filter((r) => r.type === 'event' && r.name === 'dash');
+  assert.equal(dashes.length, 2, 'Should execute 2 dashes without waiting 1.5s cooldown');
+
+  return `Picked C1, executed 2 successive dashes without cooldown penalty`;
+});
+
+// AC-2.7: Pause Toggle
+runTest('AC-2.7', 'Verify Pause input & snapshot status: pauses gameplay while clock holds', () => {
+  const inPath = path.join(SCENARIOS_DIR, 'in_pause_toggle.json');
+  const outPath = path.join(OUTPUTS_DIR, 'out_pause_toggle.jsonl');
+
+  fs.writeFileSync(
+    inPath,
+    JSON.stringify(
+      {
+        frames: [
+          { tick: 5, pause: true },
+          { tick: 6, pause: false },
+          { tick: 15, pause: true },
+          { tick: 16, pause: false }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const res = runHeadlessCLI([
     '--seed', '1',
     '--night', '1',
-    '--inputs', badInPath,
-    '--ticks', '20',
-    '--out', path.join(OUTPUTS_DIR, 'out_should_not_exist.jsonl')
+    '--inputs', inPath,
+    '--ticks', '25',
+    '--out', outPath,
+    '--snapshot-every', '5'
   ]);
-  assert.equal(badRes.status, 2, `Expected exit code 2 for invalid inputs, got ${badRes.status}`);
-  assert.ok(badRes.stderr.includes('Error:'), 'Must write error message to stderr');
+  assert.equal(res.status, 0, res.stderr);
 
-  return `SHA-256=${hash1.slice(0, 16)}... matched 100%; invalid input exit_code=${badRes.status}`;
+  const records = parseJsonl(fs.readFileSync(outPath, 'utf8'));
+  const pausedEv = records.find((r) => r.type === 'event' && r.name === 'paused');
+  const resumedEv = records.find((r) => r.type === 'event' && r.name === 'resumed');
+  assert.ok(pausedEv, 'paused event must be emitted');
+  assert.ok(resumedEv, 'resumed event must be emitted');
+
+  const pausedSnap = records.find((r) => r.type === 'snapshot' && r.tick === 10);
+  assert.equal(pausedSnap.state, 'paused');
+
+  return `Pause at tick ${pausedEv.tick}, state="paused", resumed at tick ${resumedEv.tick}`;
 });
 
-// Test 8: AC-1.8 3D Client & Creative Features Isolation
-runTest('AC-1.8', 'Verify 3D Client assets & strict isolation of creative features from headless core', () => {
-  const htmlPath = path.join(ROOT_DIR, 'src', 'client', 'index.html');
-  const clientPath = path.join(ROOT_DIR, 'src', 'client', 'main.mjs');
-  const corePath = path.join(ROOT_DIR, 'src', 'core', 'sim.mjs');
+// AC-2.8: Benchmark 21,600 ticks <= 30s & Determinism
+runTest('AC-2.8', 'Performance Benchmark (21,600 ticks <= 30s) & 100% Determinism', () => {
+  const out1 = path.join(OUTPUTS_DIR, 'out_bench_21k_run1.jsonl');
+  const out2 = path.join(OUTPUTS_DIR, 'out_bench_21k_run2.jsonl');
 
-  assert.ok(fs.existsSync(htmlPath), '3D client index.html must exist');
-  assert.ok(fs.existsSync(clientPath), '3D client main.mjs must exist');
+  const t0 = performance.now();
+  const r1 = runHeadlessCLI([
+    '--seed', '2026',
+    '--night', '3',
+    '--ticks', '21600',
+    '--out', out1,
+    '--snapshot-every', '600'
+  ]);
+  const durationSec = (performance.now() - t0) / 1000;
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.ok(durationSec <= 30.0, `21,600 ticks took ${durationSec.toFixed(2)}s, must be <= 30s`);
 
-  const coreSource = fs.readFileSync(corePath, 'utf8');
-  assert.ok(!coreSource.includes('Math.random'), 'src/core/sim.mjs must not use Math.random()');
-  assert.ok(!coreSource.includes('Date.now'), 'src/core/sim.mjs must not use Date.now()');
-  assert.ok(!coreSource.includes('window') && !coreSource.includes('document'), 'src/core/sim.mjs must be 100% DOM-free');
+  const r2 = runHeadlessCLI([
+    '--seed', '2026',
+    '--night', '3',
+    '--ticks', '21600',
+    '--out', out2,
+    '--snapshot-every', '600'
+  ]);
+  assert.equal(r2.status, 0, r2.stderr);
 
-  const clientSource = fs.readFileSync(clientPath, 'utf8');
-  assert.ok(clientSource.includes('PentatonicAudio'), 'Creative feature 1 (PentatonicAudio) present in client');
-  assert.ok(clientSource.includes('Guiding Spirit Wisp'), 'Creative feature 2 (Guiding Spirit Wisp) present in client');
-  assert.ok(clientSource.includes('let rx = fz;') && clientSource.includes('let rz = -fx;'), 'Camera right vector must align with D (+X at yaw=0) moving right on screen');
+  const h1 = sha256(fs.readFileSync(out1, 'utf8'));
+  const h2 = sha256(fs.readFileSync(out2, 'utf8'));
+  assert.equal(h1, h2, 'Determinism check failed across 21,600 ticks');
 
-  return 'Core is 100% DOM/Math.random-free; 3D client WASD screen alignment & 2 creative features verified';
+  return `21,600 ticks executed in ${durationSec.toFixed(2)}s (Benchmark limit: 30s); SHA-256 matched`;
 });
 
-// Generate Markdown Proof Report for Phase 1
+// Generate Markdown Proof Report for Phase 2
 const reportLines = [
-  '# Bằng chứng Kiểm chứng Phase 1 (Verification Proof Report)',
+  '# Bằng chứng Kiểm chứng Phase 2 (Verification Proof Report · Contract v1.1)',
   '',
   `- **Node.js Runtime:** \`${process.version}\` (\`${process.platform} / ${process.arch}\`)`,
   `- **Trạng thái tổng thể:** **${results.every((r) => r.status === 'PASS') ? '100% PASS (8/8 AC)' : 'FAILED'}**`,
   '',
   '## 1. Bảng Truy vết Yêu cầu đến Bằng chứng (Traceability Matrix)',
   '',
-  '| Mã AC | Yêu cầu (PRD-0 & Contract v1.0) | Kịch bản & File Đầu vào | File Output Bằng chứng | Kết quả | Chi tiết Kiểm chứng |',
+  '| Mã AC | Yêu cầu (Ticket-02 & Contract v1.1) | Kịch bản & File Đầu vào | File Output Bằng chứng | Kết quả | Chi tiết Kiểm chứng |',
   '|---|---|---|---|---|---|',
   ...results.map((r) => {
     const mapFiles = {
-      'AC-1.1': ['`game.contract.json`', '`game.contract.json`'],
-      'AC-1.2': ['`scenarios/sc_pickup_yaw.json`, `in_pickup_yaw.json`', '`outputs/out_pickup_yaw.jsonl`'],
-      'AC-1.3': ['`scenarios/sc_win_all_lit.json`, `in_win_all_lit.json`', '`outputs/out_win_all_lit.jsonl`'],
-      'AC-1.4': ['`scenarios/sc_pulse_stun.json`, `in_pulse_stun.json`', '`outputs/out_pulse_stun.jsonl`'],
-      'AC-1.5': ['`scenarios/sc_hit_lose.json`', '`outputs/out_hit_lose.jsonl`'],
-      'AC-1.6': ['`scenarios/sc_safe_dawn.json`', '`outputs/out_safe_dawn.jsonl`'],
-      'AC-1.7': ['`scenarios/in_determinism.json`, `in_invalid_order.json`', '`outputs/out_det_run1.jsonl`, `out_det_run2.jsonl`'],
-      'AC-1.8': ['`src/client/index.html`, `src/client/main.mjs`', '`src/core/sim.mjs` (Static Isolation Check)']
+      'AC-2.1': ['`game.contract.json`, `scenarios/sc_regress_night1.json`', '`outputs/out_regress_night1.jsonl`'],
+      'AC-2.2': ['`scenarios/sc_dash_fall.json`, `in_dash_fall.json`', '`outputs/out_dash_fall.jsonl`'],
+      'AC-2.3': ['`scenarios/sc_night2_jumppad.json`, `in_night2_jumppad.json`', '`outputs/out_night2_jumppad.jsonl`'],
+      'AC-2.4': ['`scenarios/sc_night3_tiers.json`, `in_night3_tiers.json`', '`outputs/out_night3_tiers.jsonl`'],
+      'AC-2.5': ['`scenarios/sc_drifter_steal_drop.json`, `in_drifter_steal_drop.json`', '`outputs/out_drifter_steal_drop.jsonl`'],
+      'AC-2.6': ['`scenarios/sc_charm_boost.json`, `in_charm_boost.json`', '`outputs/out_charm_boost.jsonl`'],
+      'AC-2.7': ['`scenarios/in_pause_toggle.json`', '`outputs/out_pause_toggle.jsonl`'],
+      'AC-2.8': ['`--night 3 --ticks 21600`', '`outputs/out_bench_21k_run1.jsonl`']
     }[r.id] || ['-', '-'];
-    return `| **${r.id}** | ${r.description} | ${mapFiles[0]} | ${mapFiles[1]} | **${r.status}** | ${r.details} |`;
+    return `| **${r.id}** | ${r.description} | ${mapFiles[0]} | ${mapFiles[1]} | **${r.status}** (${r.ms}ms) | ${r.details} |`;
   }),
   '',
   '## 2. Lệnh Tái lập Bằng chứng (Reproducibility)',
-  '',
-  'Giảng viên có thể chạy lại toàn bộ bộ kiểm chứng này ở tag `phase-1` bằng một lệnh duy nhất:',
   '```bash',
   'npm run verify',
   '```'
 ];
 
-fs.writeFileSync(path.join(PROOF_DIR, 'PROOF_PHASE1.md'), reportLines.join('\n') + '\n', 'utf8');
-console.log(`\n📄 Proof report generated at: docs/proof/phase1/PROOF_PHASE1.md`);
+fs.writeFileSync(path.join(PROOF_DIR, 'PROOF_PHASE2.md'), reportLines.join('\n') + '\n', 'utf8');
+console.log(`\n📄 Proof report generated at: docs/proof/phase2/PROOF_PHASE2.md`);

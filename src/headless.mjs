@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Headless CLI Runner for "Đảo Đèn Lồng" (Test Contract v1.0)
+// Headless CLI Runner for "Đảo Đèn Lồng" (Test Contract v1.1)
 // Usage:
-//   node src/headless.mjs --seed <int> --night 1 [--scenario <file.json>] [--inputs <file.json>] --ticks <int> --out <file.jsonl> [--snapshot-every <int>]
+//   node src/headless.mjs --seed <int> --night <1|2|3> [--scenario <file.json>] [--inputs <file.json>] --ticks <int> --out <file.jsonl> [--snapshot-every <int>]
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,7 +41,9 @@ function parseArgs(argv) {
       case '--night':
         if (next === undefined) exitWithError('Missing value for --night', 1);
         args.night = Number(next);
-        if (!Number.isInteger(args.night) || args.night < 1) exitWithError('--night must be a positive integer', 1);
+        if (!Number.isInteger(args.night) || args.night < 1 || args.night > 3) {
+          exitWithError('--night must be 1, 2, or 3', 1);
+        }
         i++;
         break;
       case '--scenario':
@@ -98,7 +100,7 @@ function loadContractTuning() {
       }
     }
   } catch {
-    // Fallback to DEFAULT_TUNING
+    // Fallback
   }
   return DEFAULT_TUNING;
 }
@@ -160,9 +162,9 @@ function main() {
   // Snapshot at tick 0 (after scenario setup, before applying any input)
   lines.push(JSON.stringify(sim.getSnapshot()));
 
-  // Run up to args.ticks steps (k = 0 .. N-1)
+  // Run up to args.ticks steps
   for (let k = 0; k < args.ticks; k++) {
-    if (sim.state !== 'playing') {
+    if (sim.state !== 'playing' && !sim.is_paused) {
       break;
     }
 
@@ -173,12 +175,11 @@ function main() {
       lines.push(JSON.stringify(ev));
     }
 
-    // Snapshot every --snapshot-every ticks
     if (sim.tick % args.snapshotEvery === 0) {
       lines.push(JSON.stringify(sim.getSnapshot()));
     }
 
-    if (sim.state !== 'playing') {
+    if (sim.state !== 'playing' && !sim.is_paused) {
       break;
     }
   }
