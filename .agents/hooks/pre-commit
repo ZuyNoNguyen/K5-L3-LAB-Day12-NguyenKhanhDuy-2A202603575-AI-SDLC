@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Pre-commit hook: Prevent committing broken code or failing contract tests
+echo "[Harness Hook] Running npm run verify before commit..."
+npm run verify
+if [ $? -ne 0 ]; then
+  echo "[Harness Hook] ❌ Verification failed! Commit aborted."
+  exit 1
+fi
+echo "[Harness Hook] ✅ Verification passed!"
