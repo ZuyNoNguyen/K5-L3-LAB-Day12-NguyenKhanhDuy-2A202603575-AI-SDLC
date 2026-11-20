@@ -1,0 +1,14 @@
+{
+  "name": "dao-den-long",
+  "version": "1.0.0",
+  "description": "Đảo Đèn Lồng - Day 12 AI SDLC Lab (3D Game & Headless Simulation Engine)",
+  "type": "module",
+  "scripts": {
+    "build": "node --version",
+    "start": "node src/server.mjs",
+    "test": "node tests/verify.mjs",
+    "verify": "node tests/verify.mjs"
+  },
+  "author": "Nguyen Khanh Duy (2A202603575)",
+  "license": "MIT"
+}
