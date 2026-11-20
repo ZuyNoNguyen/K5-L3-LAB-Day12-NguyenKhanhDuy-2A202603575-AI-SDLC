@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Đảo Đèn Lồng 3D — Đêm 1: Đảo Bến</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      overflow: hidden;
+      background: #070510;
+      color: #fef3c7;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    #game-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    /* HUD Overlay */
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .hud-panel {
+      background: rgba(15, 11, 29, 0.82);
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      border-radius: 12px;
+      padding: 12px 18px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 15px rgba(245, 158, 11, 0.15);
+      backdrop-filter: blur(6px);
+    }
+    .hud-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #fcd34d;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    .hud-stats {
+      display: flex;
+      gap: 20px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stat-label {
+      font-size: 13px;
+      color: #cbd5e1;
+      font-weight: 400;
+    }
+    .flames-heart {
+      color: #fb923c;
+      text-shadow: 0 0 8px #f97316;
+    }
+    .mote-icon {
+      color: #fde047;
+      text-shadow: 0 0 8px #eab308;
+    }
+    .lantern-icon {
+      color: #f59e0b;
+      text-shadow: 0 0 10px #d97706;
+    }
+    #controls-hint {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      background: rgba(15, 11, 29, 0.78);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #e2e8f0;
+      z-index: 10;
+      pointer-events: none;
+      line-height: 1.6;
+    }
+    .key {
+      display: inline-block;
+      background: rgba(251, 191, 36, 0.2);
+      border: 1px solid #fbbf24;
+      color: #fef08a;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    /* Prompt Banner */
+    #action-prompt {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(245, 158, 11, 0.92);
+      color: #0f0b1d;
+      font-weight: 700;
+      padding: 8px 20px;
+      border-radius: 999px;
+      font-size: 15px;
+      box-shadow: 0 0 20px rgba(251, 191, 36, 0.7);
+      display: none;
+      z-index: 10;
+      pointer-events: none;
+    }
+    /* End Game Modal */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 5, 16, 0.85);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+      backdrop-filter: blur(8px);
+    }
+    .modal-card {
+      background: linear-gradient(145deg, #16102b, #0c081a);
+      border: 2px solid #f59e0b;
+      border-radius: 18px;
+      padding: 32px 44px;
+      text-align: center;
+      max-width: 480px;
+      box-shadow: 0 0 40px rgba(245, 158, 11, 0.35);
+    }
+    #modal-title {
+      font-size: 32px;
+      margin-bottom: 12px;
+      color: #fbbf24;
+      text-shadow: 0 0 16px rgba(251, 191, 36, 0.6);
+    }
+    #modal-desc {
+      font-size: 16px;
+      color: #e2e8f0;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    #modal-score {
+      font-size: 26px;
+      font-weight: 800;
+      color: #fde047;
+      margin-bottom: 24px;
+    }
+    .btn-restart {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #090612;
+      font-weight: 800;
+      font-size: 16px;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 32px;
+      cursor: pointer;
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn-restart:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 28px rgba(251, 191, 36, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud">
+    <div class="hud-panel">
+      <div class="hud-title">🏮 Đảo Đèn Lồng · Đêm 1: Đảo Bến</div>
+      <div class="hud-stats">
+        <div class="stat-item">
+          <span class="flames-heart">🔥</span>
+          <span id="hud-flames">3</span>
+          <span class="stat-label">Lửa</span>
+        </div>
+        <div class="stat-item">
+          <span class="mote-icon">✨</span>
+          <span id="hud-motes">0 / 5</span>
+          <span class="stat-label">Đom đóm</span>
+        </div>
+        <div class="stat-item">
+          <span class="lantern-icon">🏮</span>
+          <span id="hud-lanterns">0 / 5</span>
+          <span class="stat-label">Đèn Lồng</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-panel">
+      <div class="hud-title">⏳ Thời gian & Điểm số</div>
+      <div class="hud-stats">
+        <div class="stat-item">
+          <span>🕒</span>
+          <span id="hud-time">180.0s</span>
+        </div>
+        <div class="stat-item">
+          <span>⭐</span>
+          <span id="hud-score">0</span>
+          <span class="stat-label">Điểm</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="action-prompt">Nhấn [E] để thắp Đèn Lồng Lớn!</div>
+
+  <div id="controls-hint">
+    <div><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> hoặc <span class="key">↑</span><span class="key">←</span><span class="key">↓</span><span class="key">→</span> : Di chuyển Mây</div>
+    <div><span class="key">Q</span> / <span class="key">R</span> hoặc <span class="key">Kéo chuột</span> : Xoay Camera 3D</div>
+    <div><span class="key">Space</span> : Nhảy · <span class="key">E</span> : Nạp Đèn Lồng · <span class="key">F</span> : Tỏa sáng xua Bóng Mực (-1 ✨)</div>
+    <div style="color:#fcd34d;margin-top:3px;">✨ <i>Sáng tạo: Chuông gió ngũ cung & Tinh linh Hoa Đăng dẫn đường về đèn chưa thắp</i></div>
+  </div>
+
+  <div id="modal-overlay">
+    <div class="modal-card">
+      <h1 id="modal-title">Bình Minh Đã Lên!</h1>
+      <p id="modal-desc">Mây đã thắp sáng toàn bộ 5 Đèn Lồng Lớn và xua tan sương đen trên Đảo Bến!</p>
+      <div id="modal-score">Điểm số: 0</div>
+      <button class="btn-restart" id="btn-restart">Chơi Lại (Đêm 1)</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/client/main.mjs"></script>
+</body>
+</html>
