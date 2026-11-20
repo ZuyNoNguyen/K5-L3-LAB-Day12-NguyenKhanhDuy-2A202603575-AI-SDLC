@@ -14,7 +14,7 @@
 | **AC-1.5** | Verify player_hit event, mote drop ratio, and game_over (lost / no_flames) | `scenarios/sc_hit_lose.json` | `outputs/out_hit_lose.jsonl` | **PASS** | Hit at tick 1: flames=0, dropped=2 -> game_over=lost(no_flames) |
 | **AC-1.6** | Verify safe_radius around lit lantern & game_over (lost / dawn) | `scenarios/sc_safe_dawn.json` | `outputs/out_safe_dawn.jsonl` | **PASS** | 0 hits inside safe_radius=5m; dawn triggered at tick 60 |
 | **AC-1.7** | Verify 100% byte-for-byte determinism & exit code 2 on malformed inputs | `scenarios/in_determinism.json`, `in_invalid_order.json` | `outputs/out_det_run1.jsonl`, `out_det_run2.jsonl` | **PASS** | SHA-256=7fee1243f31fd512... matched 100%; invalid input exit_code=2 |
-| **AC-1.8** | Verify 3D Client assets & strict isolation of creative features from headless core | `src/client/index.html`, `src/client/main.mjs` | `src/core/sim.mjs` (Static Isolation Check) | **PASS** | Core is 100% DOM/Math.random-free; 3D client & 2 creative features verified |
+| **AC-1.8** | Verify 3D Client assets & strict isolation of creative features from headless core | `src/client/index.html`, `src/client/main.mjs` | `src/core/sim.mjs` (Static Isolation Check) | **PASS** | Core is 100% DOM/Math.random-free; 3D client WASD screen alignment & 2 creative features verified |
 
 ## 2. Lệnh Tái lập Bằng chứng (Reproducibility)
 

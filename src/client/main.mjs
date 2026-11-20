@@ -222,18 +222,21 @@ function project3D(wx, wy, wz, cam) {
   fy /= fLen;
   fz /= fLen;
 
-  // Right vector = cross(forward, worldUp(0,1,0)) -> (-fz, 0, fx)
-  let rx = -fz;
+  // Right vector in world space = (-fz, 0, fx) so that at yaw=0 (forward = +Z, fz=1, fx=0),
+  // Wait: at yaw=0, if right is (-fz, 0, fx) = (-1, 0, 0), then +X projects to cx < 0 (left).
+  // To make +X project to the RIGHT of the screen (cx > 0) at yaw=0, right must be (cos(yaw), 0, sin(yaw)) = (fz, 0, -fx)!
+  // And Up vector must be cross(forward, right) = (fy*rz - fz*ry, fz*rx - fx*rz, fx*ry - fy*rx) so that +Y is UP (cy > 0)!
+  let rx = fz;
   let ry = 0;
-  let rz = fx;
+  let rz = -fx;
   const rLen = Math.hypot(rx, rz) || 1;
   rx /= rLen;
   rz /= rLen;
 
-  // Up vector = cross(right, forward)
-  const ux = ry * fz - rz * fy;
-  const uy = rz * fx - rx * fz;
-  const uz = rx * fy - ry * fx;
+  // Up vector = cross(forward, right) so uy = fz*rx - fx*rz = fz^2 + fx^2 > 0!
+  const ux = fy * rz - fz * ry;
+  const uy = fz * rx - fx * rz;
+  const uz = fx * ry - fy * rx;
 
   const dx = wx - cam.camX;
   const dy = wy - cam.camY;
@@ -261,7 +264,11 @@ function stepClientSimulation() {
 
   let mx = 0;
   let mz = 0;
-  // Note: With camYawDeg, pressing W moves forward along camera gaze (+Z when camYawDeg=0)
+  // With right = (fz, 0, -fx):
+  // - Pressing W (mz = +1) moves along camera forward (+fx, +fz) -> away from camera (UP on screen)
+  // - Pressing S (mz = -1) moves toward camera (-fx, -fz) -> (DOWN on screen)
+  // - Pressing D (mx = +1) moves along (+cos(yaw), -sin(yaw)) = (fz, -fx) = right vector -> (RIGHT on screen)
+  // - Pressing A (mx = -1) moves along (-cos(yaw), +sin(yaw)) = (-fz, fx) = -right vector -> (LEFT on screen)
   if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
   if (keys.has('KeyS') || keys.has('ArrowDown')) mz -= 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;

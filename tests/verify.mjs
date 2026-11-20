@@ -453,8 +453,9 @@ runTest('AC-1.8', 'Verify 3D Client assets & strict isolation of creative featur
   const clientSource = fs.readFileSync(clientPath, 'utf8');
   assert.ok(clientSource.includes('PentatonicAudio'), 'Creative feature 1 (PentatonicAudio) present in client');
   assert.ok(clientSource.includes('Guiding Spirit Wisp'), 'Creative feature 2 (Guiding Spirit Wisp) present in client');
+  assert.ok(clientSource.includes('let rx = fz;') && clientSource.includes('let rz = -fx;'), 'Camera right vector must align with D (+X at yaw=0) moving right on screen');
 
-  return 'Core is 100% DOM/Math.random-free; 3D client & 2 creative features verified';
+  return 'Core is 100% DOM/Math.random-free; 3D client WASD screen alignment & 2 creative features verified';
 });
 
 // Generate Markdown Proof Report for Phase 1
